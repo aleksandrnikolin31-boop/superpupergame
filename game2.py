@@ -4,7 +4,10 @@ import streamlit as st
 st.set_page_config(page_title="DOOM: Streamlit Edition", page_icon="👹")
 
 st.title("👹 DOOM: Текстовый Ад")
-st.write("Вы — космический десантник на заброшенной базе. Зачистите этажи от демонов!")
+st.write(
+    "Вы — космический десантник на заброшенной базе. Зачистите этажи от"
+    " демонов!"
+)
 
 # 1. Инициализация состояния игры
 if "player" not in st.session_state:
@@ -17,7 +20,9 @@ if "player" not in st.session_state:
       "kills": 0,
   }
   st.session_state.enemy = None
-  st.session_state.log = ["Вы прибыли на первый этаж комплекса. Здесь пахнет серой..."]
+  st.session_state.log = [
+      "Вы прибыли на первый этаж комплекса. Здесь пахнет серой..."
+  ]
   st.session_state.game_over = False
 
 
@@ -78,15 +83,14 @@ else:
 
   st.write("---")
 
-  # 4. Кнопки действий (Логика боя)
+  # 4. Кнопки действий (Логика боя) — ТУТ ВСЁ ИСПРАВЛЕНО
   action_cols = st.columns(3)
 
-  with action_cols0 = action_cols[0]:
+  with action_cols[0]:
     # Кнопка АТАКА
     if st.button("🔥 ОГОНЬ!", use_container_width=True):
       if p["ammo"] > 0:
         p["ammo"] -= 1
-        # Урон зависит от оружия
         damage = (
             random.randint(15, 30)
             if "Дробовик" in p["weapon"]
@@ -95,13 +99,11 @@ else:
         e["hp"] -= damage
         add_log(f"Вы выстрелили в {e['name']} и нанесли **{damage}** урона.")
 
-        # Проверяем, умер ли враг
         if e["hp"] <= 0:
           add_log(f"🎉 Вы уничтожили {e['name']}!")
           p["kills"] += 1
           st.session_state.enemy = None
 
-          # Шанс найти припасы после боя
           loot_roll = random.random()
           if loot_roll < 0.3:
             p["weapon"] = "Двуствольный Дробовик 🪓"
@@ -113,18 +115,16 @@ else:
             p["hp"] = min(100, p["hp"] + 20)
             add_log("🧪 Найдена аптечка (+20 HP).")
 
-          # Переход на следующий этаж
           p["floor"] += 1
           st.rerun()
       else:
         add_log("⛔ ЩЕЛК! Патроны закончились!")
 
-  with action_cols1 = action_cols[1]:
+  with action_cols[1]:
     # Кнопка БЛИЖНИЙ БОЙ (Бензопила)
     if st.button("🪚 Бензопила", use_container_width=True):
       damage = random.randint(5, 12)
       e["hp"] -= damage
-      # Бензопила дает патроны при ударе!
       p["ammo"] += 3
       add_log(
           f"Вы распилили врага на **{damage}** урона и добыли **3** патрона!"
@@ -137,7 +137,7 @@ else:
         p["floor"] += 1
         st.rerun()
 
-  with action_cols2 = action_cols[2]:
+  with action_cols[2]:
     # Кнопка ПОИСК БРОНИ
     if st.button("🏃 Маневр уклонения", use_container_width=True):
       p["armor"] = min(100, p["armor"] + 15)
@@ -145,10 +145,8 @@ else:
 
   # Ответный ход монстра (если он выжил)
   if st.session_state.enemy is not None and st.session_state.enemy["hp"] > 0:
-    # Шанс атаки монстра
     if random.random() < 0.7:
       e_damage = random.randint(5, e["damage"])
-      # Если есть броня, она поглощает часть урона
       if p["armor"] > 0:
         p["armor"] -= int(e_damage * 0.5)
         p["hp"] -= int(e_damage * 0.5)
@@ -161,5 +159,5 @@ else:
   # 5. Вывод боевого журнала
   st.write("---")
   st.subheader("Журнал боя:")
-  for log_entry in st.session_state.log[:5]:  # Показываем последние 5 событий
+  for log_entry in st.session_state.log[:5]:
     st.write(log_entry)
