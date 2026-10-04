@@ -1,163 +1,295 @@
-import random
+
 import streamlit as st
 
-st.set_page_config(page_title="DOOM: Streamlit Edition", page_icon="👹")
-
-st.title("👹 DOOM: Текстовый Ад")
-st.write(
-    "Вы — космический десантник на заброшенной базе. Зачистите этажи от"
-    " демонов!"
+st.set_page_config(
+    page_title="DOOM: Адский Тир", page_icon="🎯", layout="centered"
 )
 
-# 1. Инициализация состояния игры
-if "player" not in st.session_state:
-  st.session_state.player = {
-      "hp": 100,
-      "armor": 50,
-      "ammo": 20,
-      "weapon": "Пистолет 🔫",
-      "floor": 1,
-      "kills": 0,
-  }
-  st.session_state.enemy = None
-  st.session_state.log = [
-      "Вы прибыли на первый этаж комплекса. Здесь пахнет серой..."
-  ]
-  st.session_state.game_over = False
+st.title("👹 DOOM: Адский Тир")
+st.write(
+    "Здесь нужно **целиться и стрелять кликом мышки**! Уничтожайте демонов"
+    " до того, как они нанесут урон. Не тратьте патроны впустую!"
+)
 
+# HTML5 Canvas + JS для игры на меткость и скорость кликов
+aim_shooter_html = """
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            background-color: #0d0e12;
+            font-family: 'Courier New', Courier, monospace;
+            user-select: none;
+        }
+        #canvas-container {
+            position: relative;
+            box-shadow: 0px 0px 35px rgba(255, 0, 0, 0.5);
+            border: 2px solid #ff3333;
+            border-radius: 8px;
+            overflow: hidden;
+            cursor: crosshair; /* Прицел вместо курсора */
+        }
+        canvas {
+            background: linear-gradient(to bottom, #14141f, #07070a);
+            display: block;
+        }
+        .btn-restart {
+            margin-top: 15px;
+            padding: 12px 30px;
+            font-size: 18px;
+            background: linear-gradient(45deg, #ff2a2a, #ff6b6b);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            text-transform: uppercase;
+            box-shadow: 0 4px 15px rgba(255, 0, 0, 0.4);
+        }
+        #ui-layer {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #ff3333;
+            font-size: 26px;
+            font-weight: bold;
+            display: none;
+            background: rgba(0,0,0,0.9);
+            padding: 30px;
+            border-radius: 10px;
+            border: 1px solid #ff3333;
+            width: 75%;
+        }
+    </style>
+</head>
+<body>
 
-# Функция для добавления записей в боевой журнал
-def add_log(text):
-  st.session_state.log.insert(0, text)
+<div id="canvas-container">
+    <canvas id="aimCanvas" width="500" height="400"></canvas>
+    <div id="ui-layer">
+        <span id="death-reason">💀 ВЫ ПОГИБЛИ!</span><br>
+        <div id="final-score" style="color:#fff; font-size:18px; margin: 15px 0;"></div>
+        <button class="btn-restart" onclick="resetGame()">В БОЙ 🔄</button>
+    </div>
+</div>
 
+<script>
+    const canvas = document.getElementById("aimCanvas");
+    const ctx = canvas.getContext("2d");
+    const uiLayer = document.getElementById("ui-layer");
+    const finalScoreDiv = document.getElementById("final-score");
+    const deathReasonSpan = document.getElementById("death-reason");
 
-# Функция перезапуска
-def restart():
-  st.session_state.clear()
-  st.rerun()
+    // Состояние игры
+    let hp = 100;
+    let ammo = 30;
+    let score = 0;
+    let targets = [];
+    let gameOver = false;
+    let spawnTimer = 0;
+    let gameTicks = 0;
 
+    // Виды демонов
+    const DEMON_TYPES = [
+        { emoji: "🐒", size: 35, hp: 1, points: 10, lifetime: 120, label: "Имп" },
+        { emoji: "👁️", size: 40, hp: 1, points: 25, lifetime: 90, label: "Какодемон" },
+        { emoji: "👹", size: 55, hp: 3, points: 100, lifetime: 150, label: "КИБЕРДЕМОН" } // Требует 3 клика!
+    ];
 
-p = st.session_state.player
+    // Клик мышкой (Выстрел)
+    canvas.addEventListener("mousedown", function(event) {
+        if (gameOver) return;
 
-# 2. Проверка экрана смерти
-if st.session_state.game_over or p["hp"] <= 0:
-  st.error(f"💀 ВЫ ПОГИБЛИ! Демоны разорвали вас на этаже {p['floor']}.")
-  st.metric("Уничтожено демонов", p["kills"])
-  st.button("Возродиться в контрольной точке 🔄", on_click=restart)
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = event.clientX - rect.left;
+        const mouseY = event.clientY - rect.top;
 
-else:
-  # Появление нового врага, если его нет
-  if st.session_state.enemy is None:
-    enemy_types = [
-        {"name": "Имп 🐒", "hp": 30, "damage": 8},
-        {"name": "Пинки 🐖", "hp": 50, "damage": 15},
-        {"name": "Какодемон 👁️", "hp": 80, "damage": 20},
-    ]
-    # На высоких этажах враги сильнее
-    base_enemy = random.choice(enemy_types)
-    st.session_state.enemy = {
-        "name": base_enemy["name"],
-        "hp": base_enemy["hp"] + (p["floor"] * 5),
-        "damage": base_enemy["damage"] + p["floor"],
+        if (ammo <= 0) return;
+        ammo--; // Тратим патрон
+
+        let hitSomething = false;
+
+        // Проверяем попадание по демонам (с конца массива, чтобы кликать по верхним)
+        for (let i = targets.length - 1; i >= 0; i--) {
+            let t = targets[i];
+            // Считаем расстояние от центра эмодзи
+            let dist = Math.hypot(mouseX - (t.x + t.size/2), mouseY - (t.y + t.size/2));
+            
+            if (dist < t.size / 1.3) {
+                t.hp--;
+                hitSomething = true;
+                
+                // Вспышка попадания
+                ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                if (t.hp <= 0) {
+                    score += t.points;
+                    // Даем бонусные патроны за Кибердемона или просто за везение
+                    if (t.emoji === "👹") ammo += 5;
+                    else if (Math.random() < 0.3) ammo += 2;
+                    
+                    targets.splice(i, 1);
+                }
+                break; // Попали в одного, пуля дальше не летит
+            }
+        }
+
+        // Проверка на конец патронов
+        if (ammo <= 0 && targets.length === 0) {
+            checkGameOver();
+        }
+    });
+
+    function spawnDemon() {
+        // Шанс появления Кибердемона растет со счетом
+        let rand = Math.random();
+        let type;
+        if (rand < 0.15 && score > 150) type = DEMON_TYPES[2]; // Кибердемон
+        else if (rand < 0.45) type = DEMON_TYPES[1];          // Какодемон
+        else type = DEMON_TYPES[0];                           // Имп
+
+        let margin = 60;
+        let x = margin + Math.random() * (canvas.width - margin * 2 - type.size);
+        let y = margin + Math.random() * (canvas.height - margin * 2 - type.size);
+
+        targets.push({
+            emoji: type.emoji,
+            size: type.size,
+            hp: type.hp,
+            maxHp: type.hp,
+            points: type.points,
+            x: x,
+            y: y,
+            maxLife: type.lifetime,
+            life: type.lifetime
+        });
     }
-    add_log(f"🚨 Из темноты выпрыгнул **{st.session_state.enemy['name']}**!")
 
-  e = st.session_state.enemy
+    function update() {
+        if (gameOver) return;
 
-  # 3. Интерфейс (Характеристики игрока и врага)
-  col1, col2, col3 = st.columns(3)
-  with col1:
-    st.subheader("Состояние бойца")
-    st.write(f"❤️ Здоровье: **{p['hp']}%**")
-    st.write(f"🛡️ Броня: **{p['armor']}%**")
-    st.write(f"🎒 Патроны: **{p['ammo']}**")
-    st.write(f"⚔️ Оружие: **{p['weapon']}**")
-  with col2:
-    st.subheader("Прогресс")
-    st.write(f"🪜 Этаж: **{p['floor']}**")
-    st.write(f"🎯 Убито врагов: **{p['kills']}**")
-  with col3:
-    st.subheader("Противник")
-    st.write(f"👾 Имя: **{e['name']}**")
-    st.write(f"🩸 Жизнь монстра: **{e['hp']}**")
+        gameTicks++;
+        
+        // Частота появления демонов увеличивается со временем
+        spawnTimer++;
+        let spawnRate = Math.max(20, 60 - Math.floor(score / 20));
+        if (spawnTimer >= spawnRate) {
+            spawnDemon();
+            spawnTimer = 0;
+        }
 
-  st.write("---")
+        // Уменьшаем время жизни демонов
+        for (let i = targets.length - 1; i >= 0; i--) {
+            targets[i].life--;
+            
+            // Если не успели кликнуть, демон кусает игрока и исчезает
+            if (targets[i].life <= 0) {
+                let damage = targets[i].emoji === "👹" ? 30 : 15;
+                hp -= damage;
+                targets.splice(i, 1);
+            }
+        }
 
-  # 4. Кнопки действий (Логика боя) — ТУТ ВСЁ ИСПРАВЛЕНО
-  action_cols = st.columns(3)
+        checkGameOver();
+    }
 
-  with action_cols[0]:
-    # Кнопка АТАКА
-    if st.button("🔥 ОГОНЬ!", use_container_width=True):
-      if p["ammo"] > 0:
-        p["ammo"] -= 1
-        damage = (
-            random.randint(15, 30)
-            if "Дробовик" in p["weapon"]
-            else random.randint(8, 15)
-        )
-        e["hp"] -= damage
-        add_log(f"Вы выстрелили в {e['name']} и нанесли **{damage}** урона.")
+    function checkGameOver() {
+        if (hp <= 0) {
+            endGame("💀 ДЕМОНЫ РАЗОРВАЛИ ВАС!");
+        } else if (ammo <= 0 && targets.length === 0) {
+            endGame("🚫 ЗАКОНЧИЛИСЬ ПАТРОНЫ!");
+        }
+    }
 
-        if e["hp"] <= 0:
-          add_log(f"🎉 Вы уничтожили {e['name']}!")
-          p["kills"] += 1
-          st.session_state.enemy = None
+    function endGame(reason) {
+        gameOver = true;
+        deathReasonSpan.innerText = reason;
+        finalScoreDiv.innerText = "Истреблено на очки: " + score;
+        uiLayer.style.display = "block";
+    }
 
-          loot_roll = random.random()
-          if loot_roll < 0.3:
-            p["weapon"] = "Двуствольный Дробовик 🪓"
-            add_log("💥 О ДА! Вы нашли ДРОБОВИК!")
-          elif loot_roll < 0.6:
-            p["ammo"] += 10
-            add_log("📦 Найдена коробка с патронами (+10).")
-          else:
-            p["hp"] = min(100, p["hp"] + 20)
-            add_log("🧪 Найдена аптечка (+20 HP).")
+    function resetGame() {
+        hp = 100;
+        ammo = 35;
+        score = 0;
+        targets = [];
+        gameOver = false;
+        spawnTimer = 0;
+        uiLayer.style.display = "none";
+        loop();
+    }
 
-          p["floor"] += 1
-          st.rerun()
-      else:
-        add_log("⛔ ЩЕЛК! Патроны закончились!")
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  with action_cols[1]:
-    # Кнопка БЛИЖНИЙ БОЙ (Бензопила)
-    if st.button("🪚 Бензопила", use_container_width=True):
-      damage = random.randint(5, 12)
-      e["hp"] -= damage
-      p["ammo"] += 3
-      add_log(
-          f"Вы распилили врага на **{damage}** урона и добыли **3** патрона!"
-      )
+        // Рисуем сетку прицела на фоне для атмосферы
+        ctx.strokeStyle = "rgba(255, 0, 0, 0.1)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(canvas.width/2, 0); ctx.lineTo(canvas.width/2, canvas.height);
+        ctx.moveTo(0, canvas.height/2); ctx.lineTo(canvas.width, canvas.height/2);
+        ctx.stroke();
 
-      if e["hp"] <= 0:
-        add_log(f"🎉 {e['name']} распилен на куски!")
-        p["kills"] += 1
-        st.session_state.enemy = None
-        p["floor"] += 1
-        st.rerun()
+        // Рисуем демонов
+        targets.forEach(t => {
+            // Шкала времени жизни (кружок вокруг или полоска под ним)
+            ctx.fillStyle = "rgba(255, 0, 0, 0.3)";
+            let lifeWidth = (t.life / t.maxLife) * t.size;
+            ctx.fillRect(t.x, t.y + t.size + 4, lifeWidth, 4);
 
-  with action_cols[2]:
-    # Кнопка ПОИСК БРОНИ
-    if st.button("🏃 Маневр уклонения", use_container_width=True):
-      p["armor"] = min(100, p["armor"] + 15)
-      add_log("Вы заняли укрытие и укрепили броню (+15% 🛡️).")
+            // Если у демона много HP (Кибердемон), рисуем полоску здоровья
+            if (t.maxHp > 1) {
+                ctx.fillStyle = "#00ff00";
+                let hpWidth = (t.hp / t.maxHp) * t.size;
+                ctx.fillRect(t.x, t.y - 8, hpWidth, 4);
+            }
 
-  # Ответный ход монстра (если он выжил)
-  if st.session_state.enemy is not None and st.session_state.enemy["hp"] > 0:
-    if random.random() < 0.7:
-      e_damage = random.randint(5, e["damage"])
-      if p["armor"] > 0:
-        p["armor"] -= int(e_damage * 0.5)
-        p["hp"] -= int(e_damage * 0.5)
-        if p["armor"] < 0:
-          p["armor"] = 0
-      else:
-        p["hp"] -= e_damage
-      add_log(f"💥 {e['name']} атаковал вас и нанес **{e_damage}** урона!")
+            // Рисуем самого демона
+            ctx.font = t.size + "px Arial";
+            ctx.textAlign = "left";
+            ctx.textBaseline = "top";
+            ctx.fillText(t.emoji, t.x, t.y);
+        });
 
-  # 5. Вывод боевого журнала
-  st.write("---")
-  st.subheader("Журнал боя:")
-  for log_entry in st.session_state.log[:5]:
-    st.write(log_entry)
+        // Верхний интерфейс (Инфо-панель)
+        ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+        ctx.fillRect(0, 0, canvas.width, 40);
+
+        ctx.fillStyle = "#ff3333";
+        ctx.font = "bold 14px 'Courier New'";
+        ctx.textAlign = "left";
+        ctx.fillText("❤️ HP: " + hp + "%", 15, 15);
+
+        ctx.fillStyle = "#00ffcc";
+        ctx.fillText("🎒 ПАТРОНЫ: " + ammo, 160, 15);
+
+        ctx.fillStyle = "#fff";
+        ctx.textAlign = "right";
+        ctx.fillText("СЧЕТ: " + score, canvas.width - 15, 15);
+    }
+
+    function loop() {
+        update();
+        draw();
+        if (!gameOver) {
+            requestAnimationFrame(loop);
+        }
+    }
+
+    resetGame();
+</script>
+
+</body>
+</html>
+"""
+
+st.components.v1.html(aim_shooter_html, height=460)
